@@ -1,0 +1,27 @@
+# Secrets and keys - never commit
+.env
+*.pem
+*.key
+certs/
+
+# Local data
+instance/
+*.db
+*.sqlite3
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

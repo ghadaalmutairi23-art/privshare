@@ -1,0 +1,3 @@
+﻿student_no,name,national_id,major,gpa,grad_year,coop_completed
+400001,Example Student One,1000000001,Cybersecurity,3.45,2025,yes
+400002,Example Student Two,2000000002,Computer Science,2.90,2024,no

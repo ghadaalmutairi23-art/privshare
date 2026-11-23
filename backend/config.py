@@ -92,6 +92,9 @@ def load_config() -> dict:
         "CHAIN_DEPLOYMENT_FILE": os.environ.get("CHAIN_DEPLOYMENT_FILE")
                                  or str(ROOT / "contracts" / "deployment.json"),
         "CHAIN_TIMEOUT": _env_float("CHAIN_TIMEOUT", 10.0),
+        # Anomaly detection: re-score the analyst after every query, over the last N minutes
+        "ANOMALY_ENABLED": _env_bool("ANOMALY_ENABLED", True),
+        "ANOMALY_WINDOW_MINUTES": int(_env_float("ANOMALY_WINDOW_MINUTES", 30)),
         # Simulated university information system (university_sim/)
         "SIS_URL": os.environ.get("SIS_URL", "https://127.0.0.1:5001"),
         "SIS_API_KEY": os.environ.get("SIS_API_KEY", ""),

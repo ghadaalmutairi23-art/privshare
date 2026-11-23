@@ -85,12 +85,18 @@ CREATE TABLE IF NOT EXISTS audit_records (
     chain_index  INTEGER          -- position of this record's fingerprint in the on-chain log
 );
 
+-- Anomaly alerts for the admin (Isolation Forest). status: open -> reviewed / dismissed
 CREATE TABLE IF NOT EXISTS alerts (
-    id        INTEGER PRIMARY KEY,
-    user_id   INTEGER REFERENCES users (id),
-    score     REAL    NOT NULL,
-    reason    TEXT    NOT NULL,
-    timestamp TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER REFERENCES users (id),
+    score         REAL    NOT NULL,
+    reason        TEXT    NOT NULL,
+    timestamp     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status        TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewed', 'dismissed')),
+    features_json TEXT,
+    detected_by   TEXT,            -- "model", "far_beyond_normal" or both
+    reviewed_by   INTEGER REFERENCES users (id),
+    reviewed_at   TEXT
 );
 
 -- Security log: logins, MFA, admin actions, access denials (never passwords or codes)
@@ -148,6 +154,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_no ON students (student_no_hash)")
     if "chain_index" not in {r[1] for r in conn.execute("PRAGMA table_info(audit_records)")}:
         conn.execute("ALTER TABLE audit_records ADD COLUMN chain_index INTEGER")
+    alert_cols = {r[1] for r in conn.execute("PRAGMA table_info(alerts)")}
+    for col, decl in (("status", "TEXT NOT NULL DEFAULT 'open'"), ("features_json", "TEXT"),
+                      ("detected_by", "TEXT"), ("reviewed_by", "INTEGER"), ("reviewed_at", "TEXT")):
+        if col not in alert_cols:
+            conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {decl}")
 
 
 def get_db() -> sqlite3.Connection:

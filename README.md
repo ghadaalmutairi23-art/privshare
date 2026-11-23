@@ -3,7 +3,7 @@
 Privacy-preserving sharing of university student statistics with labor-market entities
 (graduation project, Cyber Security Program, Qassim University). See `CLAUDE.md` for the design.
 
-**Status: Phase 3 done (Phases 1, 1b, 2, 2.5 and 3 complete)**
+**Status: Phase 4 done (Phases 1, 1b, 2, 2.5, 3 and 4 complete; next: the React dashboard)**
 - Phase 1: Flask JSON API with encrypted SQLite storage, synthetic data, Argon2 + TOTP login,
   RBAC for 5 roles, CSRF, rate limiting, 15-minute idle timeout (server-side sessions), HTTPS.
 - Phase 1b: simulated university information system + sync, CSV/Excel import with a rejection
@@ -12,6 +12,8 @@ Privacy-preserving sharing of university student statistics with labor-market en
   query types, and the full query pipeline.
 - Phase 3: Solidity contract `PrivShareAudit` on a local **Anvil** node (state saved to disk),
   web3.py client, auditor log + integrity verification, fail closed when the node is down.
+- Phase 4: anomaly detection (Isolation Forest + a far-beyond-normal check) re-scores each analyst
+  after every query; explainable alerts for the admin; attack simulation script.
 
 ## Setup (Windows, VS Code terminal)
 
@@ -122,6 +124,10 @@ JSON bodies are limited to 64 KB; only the file import accepts up to 5 MB.
 | GET | `/api/audit/records?page&per_page` | auditor | off-chain audit log (aggregates and parameters only) |
 | GET | `/api/audit/chain` | auditor | contract address, block, number of on-chain records |
 | POST | `/api/audit/verify` | auditor | recompute every record's SHA-256 and compare with the chain |
+| GET | `/api/admin/alerts?status=open` | admin | anomaly alerts with score, reason, features, which check fired |
+| PATCH | `/api/admin/alerts/<id>` | admin | `{status: "reviewed" \| "dismissed"}` |
+| POST | `/api/admin/alerts/scan` | admin | re-check every active analyst now |
+| GET | `/api/admin/security-events?action&page&per_page` | admin | security log (logins, refusals, approvals, admin actions) |
 
 Verification statuses: `verified`, `tampered` (the stored record changed after it was logged),
 `not_on_chain` (no fingerprint, e.g. a redeployed contract), plus `on_chain_without_record`
@@ -141,6 +147,19 @@ Login sessions are stored server-side (`sessions` table). The cookie carries onl
 token, and the table stores its SHA-256. Logout, deactivation and the 15-minute idle timeout
 delete the row, so a copied or replayed cookie stops working.
 
+## Anomaly detection
+
+After every query the analyst's last 30 minutes are scored by an Isolation Forest trained on
+normal behaviour, plus a check for counts far beyond anything normal. Suspicious sessions open an
+alert for the admin with a plain-language reason. See it work without touching your data:
+
+```powershell
+python scripts\simulate_attack.py                       # differencing attack (default)
+python scripts\simulate_attack.py --attack averaging    # or: probing
+```
+
+Method, features and measured results: [docs/anomaly_detection.md](docs/anomaly_detection.md).
+
 ## Differential privacy
 
 The model (what is protected, how noise is calibrated, measured accuracy, and why the mean
@@ -152,11 +171,12 @@ uses a bounded model) is in [docs/dp_model.md](docs/dp_model.md).
 backend/        app.py config.py db.py crypto.py auth.py users.py roles.py rbac.py security.py
                 events.py sessions.py settings.py catalog.py data_gen.py seed_users.py
                 student_store.py ingest.py import_templates.py sis_client.py permissions.py
-                dp.py budget.py analytics.py audit.py chain.py contract_deploy.py routes/ tests/
+                dp.py budget.py analytics.py audit.py chain.py contract_deploy.py anomaly.py routes/ tests/
 contracts/      PrivShareAudit.sol (the smart contract), deploy.py
 university_sim/ simulated university information system (separate Flask service)
 samples/        sample_students.csv / .xlsx import templates
 scripts/        gen_secrets.py make_cert.py make_samples.py smoke_login.py get_anvil.py run_chain.py
-docs/           dp_model.md
+                simulate_attack.py
+docs/           dp_model.md anomaly_detection.md
 (local only)    tools/ (Anvil), chain/ (saved chain state), contracts/deployment.json
 ```

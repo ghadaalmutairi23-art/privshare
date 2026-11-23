@@ -21,3 +21,6 @@ defusedxml==0.7.1
 # Phase 3 (blockchain)
 web3==8.0.0
 py-solc-x==2.1.0
+
+# Phase 4 (anomaly detection)
+scikit-learn==1.9.1

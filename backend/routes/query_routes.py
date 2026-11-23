@@ -3,7 +3,7 @@ import json
 
 from flask import Blueprint, current_app, g, jsonify
 
-from .. import analytics, budget, permissions, settings
+from .. import analytics, anomaly, budget, permissions, settings
 from ..catalog import QUERY_TYPES
 from ..chain import get_chain
 from ..config import K_MIN
@@ -72,9 +72,21 @@ def run():
         result = analytics.run_query(db, get_chain(), _policy(db), g.user["id"],
                                      body.get("query_type"), body.get("filters"), body.get("epsilon"))
     except analytics.QueryRefused as exc:
-        # Kept for anomaly detection (Phase 4): what was asked and why it was refused, no data
+        # Kept for anomaly detection: what was asked and why it was refused, no data
         detail = json.dumps({"query_type": str(body.get("query_type"))[:40], "filters": body.get("filters"),
                              "epsilon": body.get("epsilon"), "reason": exc.reason}, default=str)[:500]
         log_event(db, "query_rejected", g.user["id"], g.user["username"], detail)
+        _check_behaviour(db)
         return jsonify(error=exc.message), exc.status
+    _check_behaviour(db)
     return jsonify(result)
+
+
+def _check_behaviour(db) -> None:
+    """Re-score this analyst's recent window (Isolation Forest). Never breaks the query itself."""
+    if not current_app.config["ANOMALY_ENABLED"]:
+        return
+    try:
+        anomaly.check_user(db, g.user["id"], current_app.config["ANOMALY_WINDOW_MINUTES"])
+    except Exception:  # detection problems are logged, the analyst's request still completes
+        current_app.logger.exception("Anomaly check failed")

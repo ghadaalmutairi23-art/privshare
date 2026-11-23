@@ -1,6 +1,6 @@
 # PrivShare – Project Progress
 
-_Last updated: 23 November 2026_
+_Last updated: 23 November 2026 (Phase 4)_
 
 This page shows where the PrivShare implementation stands: what is finished, what is left, and the decisions we made along the way.
 For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see [README.md](README.md).
@@ -16,11 +16,11 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 | 2 | Differential Privacy engine (OpenDP), privacy budget, k ≥ 10 check, full query pipeline | ✅ Done |
 | 2.5 | UI design: clickable mockups of all screens for the 5 roles | ✅ Done (awaiting team review) |
 | 3 | Solidity smart contract on a local blockchain (Anvil), web3.py client, audit verification | ✅ Done |
-| 4 | AI anomaly detection (Isolation Forest), alerts, attack simulation | ⏳ Next |
-| 5 | React dashboard built from the Phase 2.5 design | ⬜ Not started |
+| 4 | AI anomaly detection (Isolation Forest), alerts, attack simulation | ✅ Done |
+| 5 | React dashboard built from the Phase 2.5 design | ⏳ Next |
 | 6 | Testing & evaluation for the report (accuracy, performance, Wireshark, OWASP ZAP) | ⬜ Not started |
 
-**Automated tests: 211 passing** (`pytest`), including tests against the real contract on a real Anvil node. Everything runs locally over HTTPS with a self-signed certificate.
+**Automated tests: 231 passing** (`pytest`), including tests against the real contract on a real Anvil node. Everything runs locally over HTTPS with a self-signed certificate.
 
 ---
 
@@ -118,26 +118,27 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 - **Fail closed, tested on a real stopped node:** queries, approvals and verification are refused, and nothing is charged or half-written.
 - **Measured live:** about **0.07 s per query including the on-chain write** (target ≤ 5 s). The first transaction after start-up takes about 2.8 s while the connection warms up.
 
+### Phase 4 – AI anomaly detection
+- **Seven features per analyst** over the last 30 minutes: queries, refused queries, average group size, distinct filter combinations, ε spent, repeated identical queries, and the share of repeats.
+- **Isolation Forest** (scikit-learn) trained unsupervised on 3,000 synthetic windows of normal behaviour. It is never shown an attack.
+- **Hybrid check:** counts far beyond anything seen in normal use (≥ 1.5× the training maximum) are flagged too. This covers a known Isolation Forest blind spot. Every alert says which check fired.
+- **Runs after every query** (executed or refused) for that analyst. A failure in detection never breaks the query.
+- **Alerts for the admin:** score, a plain-language reason, the features, and *reviewed / dismissed* tracking. The admin can also scan all analysts at once and read the **security event log**.
+- **`scripts/simulate_attack.py`:** three normal analysts and one attacker (differencing, noise-averaging or probing) use the real pipeline, and the script shows who gets flagged.
+- **Measured** (details in [docs/anomaly_detection.md](docs/anomaly_detection.md)):
+  - **0.7 % false alarms** on 5,000 unseen normal sessions.
+  - **100 % detection** of all three attack types, including realistic versions with no refused queries.
+  - **9/9 simulations** alerted only the attacker.
+  - Live over HTTPS: an attacker was alerted after their **4th** repeated query.
+
 ---
 
 ## 3. What is left
 
-### Phase 4 – AI anomaly detection (next)
-- [ ] Features per analyst per time window:
-  - queries per window
-  - average group size
-  - number of distinct filters
-  - ε spending rate
-  - near-identical repeated queries
-  - refused queries (already logged in `security_events`)
-- [ ] Train **Isolation Forest** (scikit-learn) on synthetic normal behaviour.
-- [ ] Attack simulation script: a **differencing attack** (many narrow queries that differ by one filter) that gets flagged.
-- [ ] Alerts table + admin endpoints: list alerts, mark reviewed. Also an endpoint for the security event list, which the design shows.
-
-### Phase 5 – React dashboard
+### Phase 5 – React dashboard (next)
 - [ ] React + Vite app in `frontend/`, using the Vite proxy so cookies stay on the same origin.
 - [ ] Build every screen from the Phase 2.5 design, for all 5 roles.
-- [ ] Small API additions the design needs: the analyst's "recent queries" history and the admin security-events list.
+- [ ] One small API addition the design needs: the analyst's "recent queries" history. The admin security-events list is already done.
 - [ ] Charts for results, budget bar, clear refusal messages.
 - [ ] Pages must load in ≤ 2 s.
 
@@ -169,6 +170,9 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 | `logQuery` also takes the query type, and the contract has `revokeQueryType` | The contract must know which type to check for approval; withdrawing approval was requested by the team. |
 | Only the backend account can log queries | Nobody else can add fake fingerprints to the log. |
 | Anvil's unlocked dev accounts (0 = backend, 1 = university, 2 = partner) | No private keys stored in PrivShare for the prototype. In production each organisation signs with its own wallet on its own node. |
+| Anomaly detection adds a 7th feature, the share of repeated queries | With repeats counted only, realistic differencing attacks sat on the threshold (34 % detected); with the share, 100 %, and fewer false alarms. |
+| Hybrid: Isolation Forest + "far beyond normal" check | The model can't score a session as stranger than the most extreme normal one; the check covers that, and each alert says which fired. |
+| Alerts warn the admin; they don't block automatically | False alarms must not lock out honest analysts. The admin decides (deactivate the account), and the privacy budget limits damage in the meantime. |
 
 ---
 
@@ -186,6 +190,7 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 - The k ≥ 10 refusal reveals one bit (the group is small), even with the unified message.
 - Budgets are per analyst; several analysts from the same partner could combine theirs. A per-organisation budget would be future work.
 - One server decrypts data for computation. Stronger options (TEE, MPC) are out of scope.
+- The anomaly model is trained on synthetic normal behaviour. A real deployment should retrain it on its own logs. A patient attacker who spreads queries over many 30-minute windows looks normal per window; the privacy budget is the defence there.
 - Self-signed certificate: fine for local testing only.
 
 ---

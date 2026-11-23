@@ -9,7 +9,8 @@ from werkzeug.exceptions import HTTPException
 
 from . import chain, db, security
 from .config import ROOT, load_config
-from .routes import admin_routes, approval_routes, auth_routes, health_routes, owner_routes, query_routes
+from .routes import (admin_routes, approval_routes, audit_routes, auth_routes, health_routes, owner_routes,
+                     query_routes)
 
 CERT_FILE = ROOT / "certs" / "cert.pem"
 KEY_FILE = ROOT / "certs" / "key.pem"
@@ -24,7 +25,7 @@ def create_app(overrides: dict | None = None) -> Flask:
     db.init_app(app)
     security.init_app(app)
 
-    client = chain.create(app.config["CHAIN_BACKEND"])
+    client = chain.create(app.config)
     if isinstance(client, chain.StubChain):
         with closing(db.connect(app.config["DB_PATH"])) as conn:
             client.load_approvals(conn)
@@ -36,6 +37,7 @@ def create_app(overrides: dict | None = None) -> Flask:
     app.register_blueprint(approval_routes.bp, url_prefix="/api/approvals")
     app.register_blueprint(query_routes.bp, url_prefix="/api/query")
     app.register_blueprint(owner_routes.bp, url_prefix="/api/owner")
+    app.register_blueprint(audit_routes.bp, url_prefix="/api/audit")
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):

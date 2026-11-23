@@ -86,8 +86,12 @@ def load_config() -> dict:
         "EPSILON_MIN": _env_float("EPSILON_MIN", 0.1),
         "EPSILON_MAX": _env_float("EPSILON_MAX", 1.0),
         "GPA_SCALE": gpa_scale_default(),  # fallback only; the scale saved with the data wins
-        # "stub" until Phase 3 adds the web3 client
-        "CHAIN_BACKEND": os.environ.get("CHAIN_BACKEND", "stub"),
+        # Blockchain: "web3" = PrivShareAudit on the local Anvil node, "stub" = in-memory (tests / no node)
+        "CHAIN_BACKEND": os.environ.get("CHAIN_BACKEND", "web3"),
+        "RPC_URL": os.environ.get("RPC_URL", "http://127.0.0.1:8545"),
+        "CHAIN_DEPLOYMENT_FILE": os.environ.get("CHAIN_DEPLOYMENT_FILE")
+                                 or str(ROOT / "contracts" / "deployment.json"),
+        "CHAIN_TIMEOUT": _env_float("CHAIN_TIMEOUT", 10.0),
         # Simulated university information system (university_sim/)
         "SIS_URL": os.environ.get("SIS_URL", "https://127.0.0.1:5001"),
         "SIS_API_KEY": os.environ.get("SIS_API_KEY", ""),

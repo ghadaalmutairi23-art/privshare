@@ -49,6 +49,16 @@ def client(app):
 @pytest.fixture
 def accounts(app) -> dict[str, Account]:
     """One account per role, keyed by role."""
+    return make_accounts(app)
+
+
+@pytest.fixture
+def accounts_factory():
+    """For tests that build their own app (e.g. on a real chain)."""
+    return make_accounts
+
+
+def make_accounts(app) -> dict[str, Account]:
     out = {}
     with app.app_context():
         for role in ROLES:

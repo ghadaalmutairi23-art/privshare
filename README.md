@@ -3,25 +3,27 @@
 Privacy-preserving sharing of university student statistics with labor-market entities
 (graduation project, Cyber Security Program, Qassim University). See `CLAUDE.md` for the design.
 
-**Status: Phase 1b done (Phases 1, 1b, 2 complete; 2.5 UI design published)**
+**Status: Phase 3 done (Phases 1, 1b, 2, 2.5 and 3 complete)**
 - Phase 1: Flask JSON API with encrypted SQLite storage, synthetic data, Argon2 + TOTP login,
   RBAC for 5 roles, CSRF, rate limiting, 15-minute idle timeout (server-side sessions), HTTPS.
 - Phase 1b: simulated university information system + sync, CSV/Excel import with a rejection
   report, the owner's student-record view, per-analyst permissions and budgets set by the owner.
 - Phase 2: OpenDP Laplace engine, persistent privacy budget, k = 10 check, dual-party approval of
-  query types, and the full query pipeline with a **stub** chain client (the real contract is Phase 3).
+  query types, and the full query pipeline.
+- Phase 3: Solidity contract `PrivShareAudit` on a local **Anvil** node (state saved to disk),
+  web3.py client, auditor log + integrity verification, fail closed when the node is down.
 
-## Setup (Windows PowerShell)
+## Setup (Windows, VS Code terminal)
 
 ```powershell
-cd privshare
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+venv/Scripts/activate
 pip install -r backend\requirements.txt
 
 python scripts\gen_secrets.py --write   # creates .env with DATA_KEY, SECRET_KEY, SIS_API_KEY
                                         # (existing .env from an earlier phase? use --add-missing)
 python scripts\make_cert.py             # self-signed certs\cert.pem + key.pem
+python scripts\get_anvil.py             # downloads Anvil (pinned version, checksum verified) into tools\
 python -m backend.seed_users            # one demo user per role; prints password + TOTP key ONCE
 ```
 
@@ -53,9 +55,27 @@ and the DP engine always clamps to it, so the setting and the data can never dis
 ## Run
 
 ```powershell
-python -m university_sim.app             # terminal 1 - simulated university system, port 5001
-python -m backend.app                    # terminal 2 - PrivShare API, https://127.0.0.1:5000
+python scripts\run_chain.py              # terminal 1 - local blockchain (Anvil), 127.0.0.1:8545
+python contracts\deploy.py               # once, in another terminal - deploys the contract
+python -m university_sim.app             # terminal 2 - simulated university system, port 5001
+python -m backend.app                    # terminal 3 - PrivShare API, https://127.0.0.1:5000
 ```
+
+`run_chain.py` saves the chain to `chain/anvil-state.json` every few seconds and reloads it on
+start, so the contract, approvals and logged fingerprints survive restarts. `deploy.py` does
+nothing if a contract is already live; `--force` deploys a new one (older audit records will then
+show as `not_on_chain`, because they were logged on the previous contract).
+
+### Blockchain in one paragraph
+
+`contracts/PrivShareAudit.sol` holds (1) each side's approval of each query type - the university
+and partner accounts can only change their own side - and (2) an append-only log of query
+fingerprints. `logQuery` only accepts calls from the PrivShare backend account, only for types
+approved by **both** sides, and only with `groupSize >= 10`; the backend sends `min(n, 10)` so
+exact counts stay off-chain. Only SHA-256 fingerprints are stored, never personal data. If the
+node is down, queries, approvals and verification are refused (fail closed). Accounts are Anvil's
+dev accounts (0 = backend, 1 = university, 2 = partner); in production each organisation would
+sign with its own wallet on its own node.
 
 Use `127.0.0.1` rather than `localhost` for scripts: on Windows `localhost` tries IPv6 first
 and adds about 2 seconds to every request.
@@ -99,6 +119,14 @@ JSON bodies are limited to 64 KB; only the file import accepts up to 5 MB.
 | GET | `/api/query/permissions` | analyst | your own permissions and budget |
 | GET | `/api/query/budget` | analyst | total / spent / remaining ε |
 | POST | `/api/query` | analyst | run a query (30/min) |
+| GET | `/api/audit/records?page&per_page` | auditor | off-chain audit log (aggregates and parameters only) |
+| GET | `/api/audit/chain` | auditor | contract address, block, number of on-chain records |
+| POST | `/api/audit/verify` | auditor | recompute every record's SHA-256 and compare with the chain |
+
+Verification statuses: `verified`, `tampered` (the stored record changed after it was logged),
+`not_on_chain` (no fingerprint, e.g. a redeployed contract), plus `on_chain_without_record`
+(a fingerprint whose off-chain record was deleted). The stored `sha256` column is not trusted;
+only the on-chain value counts, so editing a record *and* its hash is still caught.
 
 Query body: `{"query_type": "avg_gpa", "filters": {"major": "Cybersecurity", "grad_year": 2024}, "epsilon": 0.5}`
 
@@ -124,9 +152,11 @@ uses a bounded model) is in [docs/dp_model.md](docs/dp_model.md).
 backend/        app.py config.py db.py crypto.py auth.py users.py roles.py rbac.py security.py
                 events.py sessions.py settings.py catalog.py data_gen.py seed_users.py
                 student_store.py ingest.py import_templates.py sis_client.py permissions.py
-                dp.py budget.py analytics.py audit.py chain.py routes/ tests/
+                dp.py budget.py analytics.py audit.py chain.py contract_deploy.py routes/ tests/
+contracts/      PrivShareAudit.sol (the smart contract), deploy.py
 university_sim/ simulated university information system (separate Flask service)
 samples/        sample_students.csv / .xlsx import templates
-scripts/        gen_secrets.py make_cert.py make_samples.py smoke_login.py
+scripts/        gen_secrets.py make_cert.py make_samples.py smoke_login.py get_anvil.py run_chain.py
 docs/           dp_model.md
+(local only)    tools/ (Anvil), chain/ (saved chain state), contracts/deployment.json
 ```

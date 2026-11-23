@@ -73,9 +73,10 @@ Source documents in this folder (read them for details, but this file wins if th
 - **Fail closed:** if the blockchain node is unreachable, refuse the query (never run unlogged).
 
 ## Smart contract (keep it small)
-`approveQueryType(id)` (records which side approved; executable only when both approved),
-`logQuery(bytes32 hash, uint groupSize)` (require approved + groupSize >= 10), `getRecord(i)` / count for verification.
-No personal data on-chain — only hashes.
+`approveQueryType(id)` / `revokeQueryType(id)` (each side changes only its own approval; a type is usable only when both approved),
+`logQuery(bytes32 queryType, bytes32 hash, uint groupSize)` (backend account only; require approved + groupSize >= 10;
+the backend sends min(n, 10) so exact counts stay off-chain), `getRecord(i)` / count for verification.
+No personal data on-chain — only hashes. Local node: Anvil with state saved to disk (`scripts/run_chain.py`).
 
 ## Anomaly detection
 Features per user/time window: queries per window, avg group size, number of distinct filters, ε spent rate, repeated near-identical queries.

@@ -31,8 +31,21 @@ def _row(r) -> dict:
 @bp.get("/query-types")
 @require("view_query_types")
 def list_query_types():
-    rows = get_db().execute("SELECT * FROM query_types ORDER BY id").fetchall()
-    return jsonify(query_types=[_row(r) for r in rows if r["name"] in QUERY_TYPES])
+    """Approval status read from the contract (the authority); the DB mirror is refreshed from it.
+    If the node is down, the last known mirror is shown and `chain_available` is false."""
+    db = get_db()
+    chain_available = True
+    try:
+        for name in QUERY_TYPES:
+            uni, partner = get_chain().approval_status(name)
+            db.execute("UPDATE query_types SET approved_uni = ?, approved_partner = ? WHERE name = ?",
+                       (int(uni), int(partner), name))
+        db.commit()
+    except ChainUnavailable:
+        chain_available = False
+    rows = db.execute("SELECT * FROM query_types ORDER BY id").fetchall()
+    return jsonify(query_types=[_row(r) for r in rows if r["name"] in QUERY_TYPES],
+                   chain_available=chain_available)
 
 
 def _set_approval(name: str, approve: bool):

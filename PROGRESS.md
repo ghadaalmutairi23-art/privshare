@@ -1,6 +1,6 @@
 # PrivShare – Project Progress
 
-_Last updated: 15 November 2026_
+_Last updated: 23 November 2026_
 
 This page shows where the PrivShare implementation stands: what is finished, what is left, and the decisions we made along the way.
 For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see [README.md](README.md).
@@ -13,14 +13,14 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 |---|---|---|
 | 1 | Backend core: database, encryption, synthetic data, login with MFA, roles, web hardening | ✅ Done |
 | 1b | University data: simulated university system + sync, Excel/CSV import, owner record view, analyst permissions | ✅ Done |
-| 2 | Differential Privacy engine (OpenDP), privacy budget, k ≥ 10 check, full query pipeline (with a stub blockchain) | ✅ Done |
+| 2 | Differential Privacy engine (OpenDP), privacy budget, k ≥ 10 check, full query pipeline | ✅ Done |
 | 2.5 | UI design: clickable mockups of all screens for the 5 roles | ✅ Done (awaiting team review) |
-| 3 | Solidity smart contract on a local blockchain, web3.py client, audit verification | ⏳ Next |
-| 4 | AI anomaly detection (Isolation Forest), alerts, attack simulation | ⬜ Not started |
+| 3 | Solidity smart contract on a local blockchain (Anvil), web3.py client, audit verification | ✅ Done |
+| 4 | AI anomaly detection (Isolation Forest), alerts, attack simulation | ⏳ Next |
 | 5 | React dashboard built from the Phase 2.5 design | ⬜ Not started |
 | 6 | Testing & evaluation for the report (accuracy, performance, Wireshark, OWASP ZAP) | ⬜ Not started |
 
-**Automated tests: 190 passing** (`pytest`). Everything runs locally over HTTPS with a self-signed certificate.
+**Automated tests: 211 passing** (`pytest`), including tests against the real contract on a real Anvil node. Everything runs locally over HTTPS with a self-signed certificate.
 
 ---
 
@@ -86,8 +86,6 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 - **Measured results** (details in [docs/dp_model.md](docs/dp_model.md)):
   - Average GPA at ε = 0.5 for 100 students: average error **0.077** (4-point scale), within ±0.2 in **≈ 92 %** of runs.
   - Query time: **33–64 ms** for 500 records (target ≤ 3 s).
-- The blockchain is currently a **stub** (an in-memory stand-in that follows the same rules). Phase 3 replaces it with the real contract.
-
 ### Phase 2.5 – UI design
 - Clickable mockup of **10 screens**:
   - sign in and MFA
@@ -99,24 +97,32 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 - It is the spec for the React app in Phase 5, and the screenshots can go in the report's design chapter.
 - Link: ask the repo owner to share the design page with you (it is private by default).
 
+### Phase 3 – Blockchain
+- **Local node: Anvil** (Foundry), downloaded by `scripts/get_anvil.py` with a pinned version and a verified checksum.
+  - `scripts/run_chain.py` saves the chain to disk and reloads it, so it **survives restarts**. Hardhat's node can't do this, which is why we chose Anvil.
+- **Smart contract** `contracts/PrivShareAudit.sol` (Solidity 0.8.28):
+  - `approveQueryType` / `revokeQueryType`: the university and the partner each control only their own side.
+  - `logQuery(queryType, hash, groupSize)`:
+    - only the PrivShare backend account may call it
+    - the query type must be approved by **both** sides
+    - `groupSize` must be **≥ 10**
+    - the hash must not be empty
+  - `getRecord(i)` and `count()` for verification.
+  - **Only SHA-256 fingerprints on-chain**, never personal data.
+- **Deploy script** `contracts/deploy.py`: compiles with py-solc-x and writes the address, ABI and account roles to `contracts/deployment.json` (local only). It refuses to replace a live contract unless you pass `--force`.
+- **web3.py client** (`CHAIN_BACKEND=web3`, now the default):
+  - It has the same interface as the stub, so the pipeline didn't change.
+  - Each audit record stores its transaction hash and its position on-chain.
+- **Auditor endpoints:** list the audit log, chain info, and **verify all**. Verify recomputes each record's SHA-256 and compares it with the chain. It reports `verified`, `tampered`, `not_on_chain`, and fingerprints whose record was deleted. Rewriting a record *and* its stored hash is still caught, because only the on-chain value is trusted.
+- **Approvals are read from the contract.** The database copy is only a fallback, marked as such when the node is down.
+- **Fail closed, tested on a real stopped node:** queries, approvals and verification are refused, and nothing is charged or half-written.
+- **Measured live:** about **0.07 s per query including the on-chain write** (target ≤ 5 s). The first transaction after start-up takes about 2.8 s while the connection warms up.
+
 ---
 
 ## 3. What is left
 
-### Phase 3 – Blockchain (next)
-- [ ] Install a local node: **Hardhat** (Node.js, easiest on Windows) or **Anvil** (Foundry).
-- [ ] Write the Solidity contract `contracts/PrivShareAudit.sol`:
-  - `approveQueryType` / `revokeQueryType` (each party controls only its own side)
-  - `logQuery(hash, groupSize)`, which requires both approvals and groupSize ≥ 10
-  - `getRecord(i)` and `count()` for verification
-  - only hashes on-chain, never personal data
-- [ ] Deploy script (compile with py-solc-x, write the address and ABI).
-- [ ] `web3.py` client replacing the stub (`CHAIN_BACKEND=web3`), with the same interface so the pipeline doesn't change.
-- [ ] **Auditor endpoints:** list audit records, and "verify all", which recomputes each record's SHA-256 and compares it with the chain. A tampered record must be detected.
-- [ ] Test fail-closed against a real stopped node.
-- [ ] Measure: chain logging ≤ 5 s.
-
-### Phase 4 – AI anomaly detection
+### Phase 4 – AI anomaly detection (next)
 - [ ] Features per analyst per time window:
   - queries per window
   - average group size
@@ -159,6 +165,10 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 | Only executed queries count toward an analyst's maximum | Refused queries don't use up their quota. |
 | National IDs masked in the owner view, revealed one at a time (logged) | The owner sees only what they need. |
 | Upload limit 5 MB | Enough for a university-sized file; protects the server. |
+| **Anvil** instead of Hardhat | Anvil saves the chain to disk; Hardhat's node forgets everything on restart, which would break "data persists across restarts". |
+| `logQuery` also takes the query type, and the contract has `revokeQueryType` | The contract must know which type to check for approval; withdrawing approval was requested by the team. |
+| Only the backend account can log queries | Nobody else can add fake fingerprints to the log. |
+| Anvil's unlocked dev accounts (0 = backend, 1 = university, 2 = partner) | No private keys stored in PrivShare for the prototype. In production each organisation signs with its own wallet on its own node. |
 
 ---
 
@@ -166,13 +176,13 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 
 1. **Default permissions for new analysts.** Right now a new analyst starts with **no restrictions** ("all"), as the data model says. Safer: **nothing allowed until the owner grants it**. That needs a change to CLAUDE.md. Which do we want?
 2. **Accuracy objective wording.** Laplace noise is random, so "within ±0.2" can't be guaranteed for every single answer. Suggested wording: _"average absolute error ≤ 0.1 and ≥ 85 % of answers within ±0.2 at ε = 0.5 for groups ≥ 100"_.
-3. **Hardhat or Anvil** for Phase 3?
 
 ---
 
 ## 6. Known limitations (to mention in the report)
 
-- The blockchain is still a stub until Phase 3.
+- The blockchain is a single local node holding all three accounts. A real deployment would have one node (and one wallet) per organisation, e.g. a permissioned network.
+- If the node confirms a fingerprint but the response is lost, the query is rolled back off-chain. The auditor's verify then shows that fingerprint as "on-chain without record", so it is visible, not hidden.
 - The k ≥ 10 refusal reveals one bit (the group is small), even with the unified message.
 - Budgets are per analyst; several analysts from the same partner could combine theirs. A per-organisation budget would be future work.
 - One server decrypts data for computation. Stronger options (TEE, MPC) are out of scope.
@@ -182,17 +192,22 @@ For the full design rules see [CLAUDE.md](CLAUDE.md); for setup and the API see 
 
 ## 7. How to run it
 
-See [README.md](README.md). Short version (Windows PowerShell):
+See [README.md](README.md). Short version (VS Code terminal on Windows):
 
 ```powershell
-python -m venv venv; .\venv\Scripts\Activate.ps1
+python -m venv venv
+venv/Scripts/activate
 pip install -r backend\requirements.txt
 python scripts\gen_secrets.py --write      # creates your own .env (never commit it)
+                                           # already have a .env? use --add-missing instead
 python scripts\make_cert.py
+python scripts\get_anvil.py                # downloads the local blockchain node (once)
 python -m backend.seed_users               # prints demo logins + TOTP keys once
-python -m university_sim.app               # terminal 1 (port 5001)
-python -m backend.app                      # terminal 2 (https://127.0.0.1:5000)
+python scripts\run_chain.py                # terminal 1: blockchain (keep open)
+python contracts\deploy.py                 # once, after the chain is running
+python -m university_sim.app               # terminal 2 (port 5001)
+python -m backend.app                      # terminal 3 (https://127.0.0.1:5000)
 pytest                                     # run all tests
 ```
 
-**Never commit** `.env`, `certs/`, or the database. They are git-ignored, and each team member generates their own.
+**Never commit** `.env`, `certs/`, `tools/`, `chain/`, `contracts/deployment.json` or the database. They are git-ignored, and each team member generates their own.

@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS audit_records (
     result_noisy REAL    NOT NULL,
     timestamp    TEXT    NOT NULL,
     sha256       TEXT    NOT NULL,
-    tx_hash      TEXT
+    tx_hash      TEXT,
+    chain_index  INTEGER          -- position of this record's fingerprint in the on-chain log
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -145,6 +146,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if col not in cols:
             conn.execute(f"ALTER TABLE students ADD COLUMN {col} TEXT")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_no ON students (student_no_hash)")
+    if "chain_index" not in {r[1] for r in conn.execute("PRAGMA table_info(audit_records)")}:
+        conn.execute("ALTER TABLE audit_records ADD COLUMN chain_index INTEGER")
 
 
 def get_db() -> sqlite3.Connection:

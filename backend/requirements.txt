@@ -17,3 +17,7 @@ numpy==2.5.4
 pandas==3.1.1
 openpyxl==3.1.5
 defusedxml==0.7.1
+
+# Phase 3 (blockchain)
+web3==8.0.0
+py-solc-x==2.1.0

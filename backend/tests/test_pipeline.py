@@ -89,10 +89,11 @@ def test_executed_query_is_fingerprinted_on_chain(app, analyst, data, approved):
     assert len(rows) == chain.count() == 3            # 100 % of executed queries logged
     for i, row in enumerate(rows):
         assert audit.fingerprint(row) == row["sha256"]
-        entry = chain.get_entry(i)
-        assert entry.record_hash == row["sha256"] and entry.tx_hash == row["tx_hash"]
+        assert row["chain_index"] == i and row["tx_hash"].startswith("0x")
+        entry = chain.get_entry(row["chain_index"])
+        assert entry.record_hash == row["sha256"] and chain.query_type_matches(entry, row["query_type"])
         assert row["group_size"] == 120      # exact size kept off-chain for the auditor
-        assert entry.group_size == 10        # chain only learns "at least k"
+    assert chain.group_sizes == [10, 10, 10]  # chain only learns "at least k"
 
 
 def test_tampered_record_no_longer_matches(app, analyst, data, approved):

@@ -133,8 +133,8 @@ def run_query(db: sqlite3.Connection, chain, policy: Policy, user_id: int,
             raise QueryRefused(OUTSIDE_PERMISSIONS, 403, "permissions")
         record_id = audit.insert(db, record, sha)
         # The contract only needs to know n >= k; min() keeps the exact count off the public chain
-        tx_hash = chain.log_query(query_type, sha, min(n, policy.k_min))
-        audit.set_tx_hash(db, record_id, tx_hash)
+        receipt = chain.log_query(query_type, sha, min(n, policy.k_min))
+        audit.set_chain_ref(db, record_id, receipt.tx_hash, receipt.index)
         db.commit()
     except ChainUnavailable as exc:
         db.rollback()
@@ -153,5 +153,5 @@ def run_query(db: sqlite3.Connection, chain, policy: Policy, user_id: int,
         "epsilon": epsilon,
         "result": int(value) if query_type == "graduates_count" else value,
         "budget": budget.get(db, user_id),
-        "tx_hash": tx_hash,
+        "tx_hash": receipt.tx_hash,
     }

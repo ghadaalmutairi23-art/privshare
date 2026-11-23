@@ -25,3 +25,8 @@ frontend/dist/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Downloaded binaries (Anvil) and local chain state
+tools/
+chain/
+contracts/deployment.json
